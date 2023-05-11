@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "vite": "^4.3.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.4"
+  }
+}
