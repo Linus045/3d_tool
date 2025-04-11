@@ -149,6 +149,15 @@ export class Matrix4x4 {
 			this.a30 * v.x + this.a31 * v.y + this.a32 * v.z + this.a33 * v.w
 		)
 	}
+	printMatrix(title: String): void {
+		let matrixStr = `${this.a00.toFixed(3)}\t${this.a01.toFixed(3)}\t${this.a02.toFixed(3)}\t${this.a03.toFixed(3)}\n`
+		matrixStr += `${this.a10.toFixed(3)}\t${this.a11.toFixed(3)}\t${this.a12.toFixed(3)}\t${this.a13.toFixed(3)}\n`
+		matrixStr += `${this.a20.toFixed(3)}\t${this.a21.toFixed(3)}\t${this.a22.toFixed(3)}\t${this.a23.toFixed(3)}\n`
+		matrixStr += `${this.a30.toFixed(3)}\t${this.a31.toFixed(3)}\t${this.a32.toFixed(3)}\t${this.a33.toFixed(3)}\n`
+
+		console.log(title + "\n" + matrixStr)
+
+	}
 }
 
 

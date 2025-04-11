@@ -1,5 +1,6 @@
 import { Camera, ProjectionMode, Renderer, Scene } from "src/render"
 import { Cube, Matrix4x4, Point3D, Vector3D } from "src/math"
+import { CustomSlider } from "./slider"
 
 let renderer = new Renderer("Front", 500, 500)
 let renderer2 = new Renderer("Top", 500, 500)
@@ -10,7 +11,6 @@ let camera2 = new Camera(new Point3D(0, 4, 0), new Point3D(0, 0, 0), new Vector3
 let camera3 = new Camera(new Point3D(4, 0, 0), new Point3D(0, 0, 0), new Vector3D(0, 1, 0), ProjectionMode.Perspective)
 
 document.addEventListener("visibilitychange", onchange);
-
 
 enum MouseMode {
 	Rotate,
@@ -136,10 +136,16 @@ function onMouseMove(evt: MouseEvent) {
 				let start = new Point3D(x0 / 100, y0 / 100, 0)
 				let end = new Point3D(x1 / 100, y1 / 100, 0)
 				camera.translateVec(end.subPoint(start).mul(-1))
+				sliderX.setValue(camera.eye.x)
+				sliderY.setValue(camera.eye.y)
+				sliderZ.setValue(camera.eye.z)
 				break
 			case MouseMode.Zoom:
 				let distance = y1 - y0
 				camera.translateVec(new Vector3D(0, 0, -distance / 100))
+				sliderX.setValue(camera.eye.x)
+				sliderY.setValue(camera.eye.y)
+				sliderZ.setValue(camera.eye.z)
 				break
 
 		}
@@ -159,55 +165,119 @@ function onchange(_evt: Event) {
 }
 
 
-// TODO: outsource the sliders to a separate file or use a library
-let x = 0
+camera.setPosition(new Point3D(0, 5, 5))
 
-let sliderX = document.createElement("input")
-sliderX.type = "range"
-sliderX.min = "-5"
-sliderX.max = "5"
-sliderX.value = "200"
-sliderX.addEventListener("input", (_evt: Event) => {
-	x = parseInt(sliderX.value)
-})
+let aspectSlider = CustomSlider.createSlider("aspect", 0.1, 5.0, 0.1, 1.0)
+aspectSlider.onChangeCallback = onSliderUpdate
+document.body.appendChild(aspectSlider)
+
+let fovXSlider = CustomSlider.createSlider("fovX", 0, 180, 1, 60)
+fovXSlider.onChangeCallback = onSliderUpdate
+document.body.appendChild(fovXSlider)
+
+
+let fovYSlider = CustomSlider.createSlider("fovY", 0, 180, 1, 90)
+fovYSlider.onChangeCallback = onSliderUpdate
+document.body.appendChild(fovYSlider)
+
+let sliderX = CustomSlider.createSlider("x", -5, 5, 0.1, camera.eye.x)
+sliderX.onChangeCallback = onSliderUpdate
 document.body.appendChild(sliderX)
 
-let y = 0
-
-let sliderY = document.createElement("input")
-sliderY.type = "range"
-sliderY.min = "-5"
-sliderY.max = "5"
-sliderY.value = "150"
-sliderY.addEventListener("input", (_evt: Event) => {
-	y = parseInt(sliderY.value)
-})
+let sliderY = CustomSlider.createSlider("y", -5, 5, 0.1, camera.eye.y)
+sliderY.onChangeCallback = onSliderUpdate
 document.body.appendChild(sliderY)
+
+let sliderZ = CustomSlider.createSlider("z", 0, 20, 1, camera.eye.z)
+sliderZ.onChangeCallback = onSliderUpdate
+document.body.appendChild(sliderZ)
+
+function onSliderUpdate(slider: CustomSlider, value: number) {
+	if (slider === aspectSlider) {
+		camera.setFovXWithAspect(fovXSlider.value, aspectSlider.value)
+		fovXSlider.setValue(fovXSlider.value)
+		fovYSlider.setValue(fovXSlider.value / aspectSlider.value)
+	} else if (slider === fovXSlider || slider === fovYSlider) {
+		camera.setFov(fovXSlider.value, fovYSlider.value)
+		aspectSlider.setValue(fovXSlider.value / fovYSlider.value)
+	} else if (slider == sliderX || slider == sliderY || slider == sliderZ) {
+		camera.setPosition(new Point3D(sliderX.value, sliderY.value, sliderZ.value))
+	}
+}
+
+
+
+camera.setNearFar(-0.2, -100)
+
+camera2.setNearFar(-0.2, -10)
+camera2.setFov(90, 90)
+
+camera3.setNearFar(-0.2, -10)
+camera3.setFov(90, 90)
 
 let scene = new Scene()
 
-scene.objects.push(new Cube(new Point3D(1, 0, -2), new Vector3D(0, 0, 0), 1, "green", true))
-scene.objects.push(new Cube(new Point3D(-1, 0, -2), new Vector3D(0, 0, 0), 1, "blue", true))
-scene.objects.push(new Cube(new Point3D(1, -1, -1), new Vector3D(0, 0, 0), 2, "black", true))
+scene.objects.push(new Cube(new Point3D(0, 0, -2), new Vector3D(0, 0, 0), 1, "green", false))
 scene.objects.push(new Cube(new Point3D(0.5, -0.5, -0.5), new Vector3D(0, 0, 0), 1, "red", true))
-scene.objects.push(new Cube(new Point3D(0, 3, 0), new Vector3D(0, 0, 0), 2, "red", true))
-scene.objects.push(new Cube(new Point3D(0, 1, 0), new Vector3D(45, 0, 0), 1, "red", true))
+// scene.objects.push(new Cube(new Point3D(-1, 0, -2), new Vector3D(0, 0, 0), 1, "blue", true))
+// scene.objects.push(new Cube(new Point3D(1, -1, -1), new Vector3D(0, 0, 0), 2, "black", true))
+// scene.objects.push(new Cube(new Point3D(0, 3, 0), new Vector3D(0, 0, 0), 2, "red", true))
+// scene.objects.push(new Cube(new Point3D(0, 1, 0), new Vector3D(45, 0, 0), 1, "red", true))
+
+
+// m = camera.lookAt.mulMat(m)
+// m = camera.rotationMatrix.mulMat(m)
+
+function drawViewFrustum(renderer: Renderer, camera: Camera, frustumCamera: Camera) {
+	let corners = frustumCamera.viewFrustum.calculateCorners()
+	let points = corners.map((corner) => {
+		let p = frustumCamera.lookAtInv.mulVec(corner)
+		return p
+	})
+
+	renderer.drawLine3D(camera, points[0], points[1], "green", 3)
+	renderer.drawLine3D(camera, points[1], points[3], "green", 3)
+	renderer.drawLine3D(camera, points[3], points[2], "green", 3)
+	renderer.drawLine3D(camera, points[2], points[0], "green", 3)
+
+	renderer.drawLine3D(camera, points[4], points[5], "red", 3)
+	renderer.drawLine3D(camera, points[5], points[7], "red", 3)
+	renderer.drawLine3D(camera, points[7], points[6], "red", 3)
+	renderer.drawLine3D(camera, points[6], points[4], "red", 3)
+
+	renderer.drawLine3D(camera, points[0], points[4], "purple", 2)
+	renderer.drawLine3D(camera, points[1], points[5], "purple", 2)
+	renderer.drawLine3D(camera, points[3], points[7], "purple", 2)
+	renderer.drawLine3D(camera, points[2], points[6], "purple", 2)
+
+	points.forEach((point) => {
+		renderer.drawPoint3D(camera, point, "orange", 10)
+	})
+
+}
+
 
 // TODO: replace with requestAnimationFrame: https://developer.mozilla.org/en-US/docs/Web/API/window/requestAnimationFrame
 renderer.setAnimation(() => {
 	renderer.clear()
 	renderer.drawGizmos(camera, new Point3D(0, 0, 0))
 	renderer.drawScene(scene, camera);
+
+	renderer.drawPoint3D(camera, camera.center, "blue", 10)
+
+	drawViewFrustum(renderer, camera, camera3)
+	drawViewFrustum(renderer, camera, camera2)
 })
 
 renderer.startRenderLoop()
+
 
 renderer2.setAnimation(() => {
 	renderer2.clear()
 	renderer2.drawGizmos(camera2, new Point3D(0, 0, 0))
 	renderer2.drawScene(scene, camera2);
 })
-renderer2.startRenderLoop()
+renderer2.animationLoop()
 
 renderer3.setAnimation(() => {
 	renderer3.clear()

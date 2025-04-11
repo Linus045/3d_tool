@@ -13,8 +13,139 @@ export enum ProjectionMode {
 	Perspective
 }
 
+
+export class ViewFrustum {
+	near: number
+	far: number
+	l: number
+	r: number
+	t: number
+	b: number
+
+	fovX: number
+	fovY: number
+
+	constructor(near: number, far: number, fovX: number, aspect: number) {
+		this.near = near
+		this.far = far
+		this.fovX = fovX
+		this.fovY = fovX / aspect
+	}
+
+	setNearFar(near: number, far: number) {
+		this.near = near
+		this.far = far
+	}
+
+	setFovXY(fovX: number, fovY: number) {
+		this.fovX = fovX
+		this.fovY = fovY
+	}
+
+	setFovXWithAspect(fovX: number, aspect: number) {
+		this.fovX = fovX
+		this.fovY = fovX / aspect
+	}
+
+	calculateNearPlane(): { t: number, b: number, l: number, r: number } {
+		let t = this.near * Math.tan((this.fovY * Math.PI / 180) / 2)
+		let b = -t
+		let r = this.near * Math.tan((this.fovX * Math.PI / 180) / 2)
+		let l = -r
+		return { t, b, l, r }
+	}
+
+	calculateFarPlane(): { t: number, b: number, l: number, r: number } {
+		let t = this.far * Math.tan((this.fovY * Math.PI / 180) / 2)
+		let b = -t
+		let r = this.far * Math.tan((this.fovX * Math.PI / 180) / 2)
+		let l = -r
+		return { t, b, l, r }
+	}
+
+
+	calculateMatrix(): Matrix4x4 {
+		// http://learnwebgl.brown37.net/08_projections/projections_perspective.html
+		// let aspect = 1.0
+
+		// fov 90 = 45 degrees => t~=2 and r ~= 2
+		let { t, b, l, r } = this.calculateNearPlane()
+
+		let mid_x = (l + r) / 2
+		let mid_y = (t + b) / 2
+		// yellow matrix
+		let moveToFrustumApex = new Matrix4x4(
+			1, 0, 0, -mid_x,
+			0, 1, 0, -mid_y,
+			0, 0, 1, 0,
+			0, 0, 0, 1)
+
+		// mapping depth z values to -1 to 1
+		// purple matrix
+		let c1 = 2 * this.far * this.near / (this.near - this.far)
+		let c2 = (this.far + this.near) / (this.far - this.near)
+		let mapZmatrix = new Matrix4x4(
+			1, 0, 0, 0,
+			0, 1, 0, 0,
+			0, 0, -c2, c1,
+			0, 0, -1, 0
+		)
+
+		// gray matrix
+		let mFrustum = new Matrix4x4(
+			this.near, 0, 0, 0,
+			0, this.near, 0, 0,
+			0, 0, 1, 0,
+			0, 0, 0, 1
+		)
+
+		// scale the view window to (-1,-1) to (1,1)
+		// cyan matrix
+		let scaleViewMatrix = new Matrix4x4(
+			2 / (r - l), 0, 0, 0,
+			0, 2 / (t - b), 0, 0,
+			0, 0, 1, 0,
+			0, 0, 0, 1
+		)
+
+		// console.log("near", this.near, "far", this.far, "l", l, "r", r, "t", t, "b", b)
+
+		let result = scaleViewMatrix.mulMat(mFrustum.mulMat(mapZmatrix).mulMat(moveToFrustumApex))
+		// result.printMatrix("Frustum Matrix:")
+		return result
+	}
+
+
+	calculateCorners(): Point3D[] {
+		let corners = []
+
+		let { t, b, l, r } = this.calculateNearPlane()
+
+		// console.log("near", this.near, "far", this.far, "l", l, "r", r, "t", t, "b", b)
+
+		corners[0] = new Point3D(l, t, this.near)
+		corners[1] = new Point3D(l, b, this.near)
+		corners[2] = new Point3D(r, t, this.near)
+		corners[3] = new Point3D(r, l, this.near)
+
+
+		let { t: tFar, b: bFar, l: lFar, r: rFar } = this.calculateFarPlane()
+
+		// console.log("near", this.near, "far", this.far, "l", lFar, "r", rFar, "t", tFar, "b", bFar)
+
+		corners[4] = new Point3D(lFar, tFar, this.far)
+		corners[5] = new Point3D(lFar, bFar, this.far)
+		corners[6] = new Point3D(rFar, tFar, this.far)
+		corners[7] = new Point3D(rFar, lFar, this.far)
+
+		return corners
+	}
+
+}
+
 export class Camera {
 	lookAt: Matrix4x4
+	lookAtInv: Matrix4x4
 	projectionMatrix: Matrix4x4
 	right: Vector3D;
 	up: Vector3D;
@@ -23,11 +154,14 @@ export class Camera {
 	rotationMatrix: Matrix4x4;
 	eye: Point3D
 
+	viewFrustum: ViewFrustum
+
+
 	constructor(eye: Point3D, center: Point3D, up: Vector3D, projectionMode: ProjectionMode) {
 		this.up = up
 		this.up.normalize()
 
-		this.dir = Vector3D.fromPoint(eye).sub(Vector3D.fromPoint(center))
+		this.dir = Vector3D.fromPoint(center).sub(Vector3D.fromPoint(eye))
 		this.dir.normalize()
 
 		this.right = this.dir.cross(up)
@@ -37,6 +171,8 @@ export class Camera {
 		this.eye = eye
 
 		this.rotationMatrix = new Matrix4x4()
+
+		this.viewFrustum = new ViewFrustum(-1, -10, 90, 1 / 1)
 
 		this.calculateMatrix()
 	}
@@ -71,6 +207,13 @@ export class Camera {
 			0, 0, 0, 1
 		)
 
+		this.lookAtInv = new Matrix4x4(
+			this.right.x, this.up.x, -this.dir.x, this.eye.x,
+			this.right.y, this.up.y, -this.dir.y, this.eye.y,
+			this.right.z, this.up.z, -this.dir.z, this.eye.z,
+			0, 0, 0, 1
+		)
+
 
 		if (this.projectionMode == ProjectionMode.Parallel) {
 			let pParallelProjection = new Matrix4x4(
@@ -81,63 +224,8 @@ export class Camera {
 			)
 			this.projectionMatrix = pParallelProjection
 		} else if (this.projectionMode == ProjectionMode.Perspective) {
-			// http://learnwebgl.brown37.net/08_projections/projections_perspective.html
-			let aspect = 1.0
-			let near = 2.0
-			let far = 40
-			let fov = 90
-
-			// fov 90 = 45 degrees => t~=2 and r ~= 2
-			let t = near * Math.tan((fov * Math.PI / 180) / 2)
-			let b = -t
-
-			let r = t * aspect
-			let l = -r
-
-
-			let mid_x = (l + r) / 2
-			let mid_y = (t + b) / 2
-			// yellow matrix
-			let moveToFrustumApex = new Matrix4x4(
-				1, 0, 0, -mid_x,
-				0, 1, 0, -mid_y,
-				0, 0, 1, 0,
-				0, 0, 0, 1)
-
-			// mapping depth z values to -1 to 1
-			// purple matrix
-			let c1 = 2 * far * near / (near - far)
-			let c2 = (far + near) / (far - near)
-			let mapZmatrix = new Matrix4x4(
-				1, 0, 0, 0,
-				0, 1, 0, 0,
-				0, 0, -c2, c1,
-				0, 0, -1, 0
-			)
-
-			// gray matrix
-			let mFrustum = new Matrix4x4(
-				near, 0, 0, 0,
-				0, near, 0, 0,
-				0, 0, 1, 0,
-				0, 0, 0, 1
-			)
-
-			// scale the view window to (-1,-1) to (1,1)
-			// cyan matrix
-			let scaleViewMatrix = new Matrix4x4(
-				2 / (r - l), 0, 0, 0,
-				0, 2 / (t - b), 0, 0,
-				0, 0, 1, 0,
-				0, 0, 0, 1
-			)
-
 			// combine matrices
-			let m = mapZmatrix.mulMat(moveToFrustumApex)
-			m = mFrustum.mulMat(m)
-			m = scaleViewMatrix.mulMat(m)
-
-			this.projectionMatrix = m
+			this.projectionMatrix = this.viewFrustum.calculateMatrix()
 		} else {
 			throw new Error("Unknown projection mode")
 		}
@@ -149,6 +237,21 @@ export class Camera {
 
 	setPosition(eye: Point3D) {
 		this.eye = eye
+		this.calculateMatrix()
+	}
+
+	setFov(fovX: number, fovY: number) {
+		this.viewFrustum.setFovXY(fovX, fovY)
+		this.calculateMatrix()
+	}
+
+	setNearFar(near: number, far: number) {
+		this.viewFrustum.setNearFar(near, far)
+		this.calculateMatrix()
+	}
+
+	setFovXWithAspect(fovX: number, aspect: number) {
+		this.viewFrustum.setFovXWithAspect(fovX, aspect)
 		this.calculateMatrix()
 	}
 
@@ -242,19 +345,42 @@ export class Renderer {
 		this.animationLoop = animationLoop
 	}
 
-	transform(camera: Camera, point: Point3D): Point3D {
+	transform(camera: Camera, point: Point3D): Point3D | null {
 		let m = camera.lookAt.mulMat(camera.rotationMatrix)
+
+		// invert y axis because canvas has positive y axis pointing down
+		m = new Matrix4x4(
+			1, 0, 0, 0,
+			0, -1, 0, 0,
+			0, 0, 1, 0,
+			0, 0, 0, 1).mulMat(m)
+
 		m = camera.projectionMatrix.mulMat(m)
+
 		m = this.viewportMatrix.mulMat(m);
 
 		let p = m.mulVec(point)
-		p.dehomogen()
+		if ((-p.z > camera.viewFrustum.near) || (-p.z < camera.viewFrustum.far)) {
+			// console.log("point out of view frustum", camera.viewFrustum.near, camera.viewFrustum.far, -p.z)
+			return null
+		}
 
 		return p
 	}
 
-	drawPoint3D(camera: Camera, point: Point3D, color: string = "black", radius: number = 1) {
-		let p = this.transform(camera, point)
+	orderPointsByZ(points: Point3D[]) {
+		points.sort((a: Point3D, b: Point3D) => {
+			return b.z - a.z
+		})
+	}
+
+
+	drawPoint3D(camera: Camera, point: Point3D, color: string = "black", radius: number = 1, dontTransform: boolean = false) {
+		let p = dontTransform ? point : this.transform(camera, point)
+		if (p == null) {
+			return
+		}
+		p.dehomogen()
 
 		this.ctx.beginPath()
 		this.ctx.arc(p.x, p.y, radius, 0, 2 * Math.PI)
@@ -262,9 +388,14 @@ export class Renderer {
 		this.ctx.fill()
 	}
 
-	drawLine3D(camera: Camera, p0: Point3D, p1: Point3D, color: string = "black", width: number = 1) {
-		let start = this.transform(camera, p0)
-		let end = this.transform(camera, p1)
+	drawLine3D(camera: Camera, p0: Point3D, p1: Point3D, color: string = "black", width: number = 1, dontTransform: boolean = false) {
+		let start = dontTransform ? p0 : this.transform(camera, p0)
+		let end = dontTransform ? p1 : this.transform(camera, p1)
+		if (start == null || end == null) {
+			return
+		}
+		start.dehomogen()
+		end.dehomogen()
 
 		this.ctx.beginPath()
 		this.ctx.moveTo(start.x, start.y)
@@ -277,9 +408,14 @@ export class Renderer {
 	drawPolygon3D(camera: Camera, points: Point3D[], color: string = "black") {
 		this.ctx.beginPath()
 		let start = this.transform(camera, points[0])
+		if (start == null) {
+			return
+		}
+		start.dehomogen()
 		this.ctx.moveTo(start.x, start.y)
 		points.forEach((p) => {
 			p = this.transform(camera, p)
+			p.dehomogen()
 			this.ctx.lineTo(p.x, p.y)
 		})
 		this.ctx.lineTo(start.x, start.y)
